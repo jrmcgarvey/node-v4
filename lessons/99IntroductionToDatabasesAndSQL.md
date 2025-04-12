@@ -8,7 +8,7 @@
 
 1. What SQL Is, and Why it is Used
 2. Tutorial: Querying with SELECT, filtering and sorting results, JOIN operations
-3. Connecting to a Postgres Database From Node
+3. Managing the Schema
 4. Writing SQL Queries in Node
 
 ---
@@ -60,7 +60,39 @@ Postgres, by default, turns on the foreign key constraint.
 
 ## **99.2 A Tutorial on SQL**
 
-You should next do the following tutorial: [https://sqlbolt.com/](https://sqlbolt.com/).  For this lesson, read the introduction and parts 1 through 9 of the tutorial.
+You should next do the following tutorial: [https://sqlbolt.com/](https://sqlbolt.com/).  For this lesson, read the introduction and do parts 1 through 12 of the tutorial.
+
+### **Check for Understanding**
+
+1. Suppose you have two tables, persons and pets.  Suppose you have a one-to-many association between persons and pets. Suppose the primary key for the person table is person_id and suppose the primary key for the pet table is pet_id.  Which table must contain a foreign key?
+
+2. Suppose the persons table contains a person_name column, and the pets table contains a pet_names column.  You want to retrieve all the person_names, and for each, all the pet_names.  How do you combine this information?
+
+3. Suppose that the foreign key for the person is also named person_id.  What is the SELECT statement to retrieve the person_names and, for each, the corresponding pet_names?
+
+4. Why don't you use the pet_id in this SELECT statement?
+
+5. Suppose each pet record has the weight of the pet, of type REAL.  Now suppose you want to find the names, and the total pet weight, for all persons who have more than 40 pounds of pets.  (Maybe it's a rule in the apartment complex that nobody is supposed to have more than 40 pounds of pets.)  What is the SELECT statement in this case?  Why do you need to use GROUP BY and HAVING in this SQL statement?
+
+### **Answers**
+
+1. The pets table must contain the foreign key.  Each pet belongs to one person, so the foreign key points to the person record in the person table.  As a person may have several pets, there may be several entries in the pets table with the same foreign key.
+
+2. You combine the information with an inner JOIN.  The default for the JOIN statement is an innner JOIN.
+
+3. The statement you want is:
+    ```SQL
+    SELECT person_name, pet_name FROM persons JOIN pets ON person.person_name = pet.person_name;
+
+4. You don't need the pet_id.  You can't use pet_id in the ON clause because pet_id is not a column in the persons table.
+
+5. The statement you want is:
+
+    ```SQL
+    SELECT person_name, SUM(weight) AS total_pet_weight FROM persons JOIN pets ON person.person_id = pet.person_id GROUP BY person.person_id HAVING SUM(weight) > 40.0;
+    ```
+
+    You need to do the GROUP BY to aggregate the pet weights for each person.  You need to use the HAVING, instead of WHERE, in your filter, because you can't use an aggregate like the SUM(weight) in a WHERE clause.  Note that you can't use the column alias (total_pet_weight) in the HAVING clause.
 
 ---
 
@@ -94,12 +126,12 @@ For every order, there is a customer and an employee.  The foreign keys are used
 
 2. There is a many-to-many association between orders and products.  An order may include many products.  A product may be included in many orders.  The join table in the middle is the line_items table.
 
-3. You need the orders table, specifically those orders with customer_id=1.  customer_id is a foreign key in the orders table.  You need the products table, because that's the one with the product names.  You need the line_items table, because that's the join table between orders and products.  So your SQL statement would be:
+3. To do this query, you need the orders table, specifically those orders with customer_id=1.  The customer_id is a foreign key in the orders table.  You need the products table, because that's the one with the product names.  You need the line_items table, because that's the join table between orders and products.  So your SQL statement would be:
 
 ```SQL
 SELECT product_name FROM orders JOIN line_items ON orders.order_id = line_items.order_id JOIN products ON line_items.product_id = products.product_id WHERE customer_id = 1;
 ```
-We didn't have to say products.product_name, because that column name is only in one of the tables, but we did have to fully qualify order_id, because that's in two tables.  Here's a tip to save typing.  You can use AS to alias the table names.
+The statement above didn't have to say products.product_name, because that column name is only in one of the tables, but we did have to fully qualify order_id each time that column name is used, because that column name is in two tables.  Here's a tip to save typing.  You can use AS to alias the table names:
 
 ```SQL
 SELECT product_name FROM orders AS o JOIN line_items AS li ON o.order_id = li.order_id JOIN products AS p ON li.product_id = p.product_id WHERE customer_id = 1;
@@ -112,6 +144,8 @@ SELECT product_name FROM orders o JOIN line_items li ON o.order_id = li.order_id
 ```
 
 ## **99.4 SQL Operations from a Node Program**
+
+You will now create a Node program to communicate with your database on neon.tech.  The library you will use is called node-postgres, or sometimes just `pg`.  There is another way to connect to relational databases, and that is by using an Object-Relational Mapping (ORM).  Popular ORMs for Node include Prisma and Sequelize.  The advantage of ORMs is tht you can interact with databases and manage the schema using object oriented calls.  Also, these ORMs work with various SQL databases, whereas the `pg` package just works with Postgres.  But using an ORM is a little confusing, because actual SQL statements are created by the ORM itself, based on the objects you are trying to access, so ORMs don't fit in this brief class.  But, you should learn to use them!
 
 The operations you performed in the tutorial can all be done from within a Node program.  You will now create such a program.  Switch to the `assignment99` folder of your node-homework folder, and within it create a program called `sqlintro.js`.  This should start as follows:
 
@@ -129,15 +163,18 @@ Continue with the following code:
 
 ```js
 async function runQueries() { // Database access calls are asynchronous
+  let pool=null
   try { // And they can throw errors!
-    const pool = new Pool({ connectionString: process.env.DB_URL });
+    pool = new Pool({ connectionString: process.env.DB_URL });
     pool.on("error", (error) => {
       console.log(
         `A pool error event occurred: ${error.name} ${error.message} ${error.stack}`,
       );
     });
 ```
-Why a pool?  In an Express application, you may have many requests coming in.  To do a database connection each time a request comes in would be quite slow.  You want to create a connection and reuse it, and the pool provides for that.  Also, the pool can have multiple connections ready, in case one is busy handling a request when another is needed.  **Note the event handler for the pool error event.**  Some errors can happen that aren't raised.  Instead an event is emitted, and it's important to handle that event.
+Why a pool?  In an Express application, you may have many requests coming in.  To do a database connection each time a request comes in would be quite slow.  You want to create a connection and reuse it, and the pool provides for that.  Also, the pool can have multiple connections ready, in case one is busy handling a request when another is needed.  
+
+**Note the event handler for the pool error event.**  When you use the `pg` package, some errors can happen that aren't thrown.  For these errors, an event is emitted instead, and it's important to handle that event.
 
 Continuing:
 
@@ -167,15 +204,18 @@ Continuing:
     }
     cursor.close() // done reading, we have to close the cursor
     client.release() // return the client to the pool.  It stays connected though.
-    await pool.end()
   } catch (error) {
     console.log(
-      `An error was raised: ${error.name} ${error.message} ${error.stack}`,
+      `An error was thrown: ${error.name} ${error.message} ${error.stack}`,
     );
+  } finally {
+    if (pool) {
+      await pool.end()
+    }
   }
 }
 ```
-At the end of the query, some cleanup is necessary: close the cursor and return the client to the pool.  We could do another query after the client release, and we'll add that code soon, but when all the queries are done, we end the pool, which closes all the connections associated with the pool.  If you find your program doesn't end, that means that you haven't cleaned up as you should, so watch for that. Of course, we have to catch any errors.  Ok, about that printRows() function:
+At the end of the query, some cleanup is necessary: close the cursor and return the client to the pool.  We could do another query after the client release, and we'll add that code soon, but when all the queries are done, we end the pool, which closes all the connections associated with the pool.  If you find your program doesn't end, that means that you haven't cleaned up as you should, so watch for that. Of course, we have to catch any errors.  Ok, about that printRows() function?
 
 ```js
 function printRows(cursor, rows, firstRow) {
@@ -195,9 +235,9 @@ runQueries(); // kick off the async function that does the queries
 ```
 Before printing out the first row, we want to print a header row with the column names.  That metadata is in `cursor._result.fields`.  This is an array of FieldInfo objects, each of which contains the column name and the data type.  The code above extracts the names with a map(), joins the resulting array with tab characters in between, and then prints out that header line.  As for the rows, we have an array of values.  We'd like to join them up -- but we have to use map() again, to convert them all to strings, or the join would give an error.  Then we join the array of values and print that out too.
 
-Ok, try this code out.  One tip: On the free plan, Neon doesn't keep the data long term.  The tables stay, but not the data.  You can run the `load-db.js` again to reload the data as needed.
+Ok, try this code out.  One tip: On the free plan, Neon doesn't keep the data long term.  The tables stay, but not the data.  You can run the `load-db.js` program again to reload the data as needed.
 
-The interaction with the database happens when a query() statement occurs -- or perhaps, with a cursor, when the subsequent cursor.read() occurs.  The SQL statement used above is a SELECT, but in the next lesson, we'll get to a bunch of others: INSERT, UPDATE, DELETE, BEGIN, END, ROLLBACK, and in each case, client.query() is the method used to execute them.
+Interaction with the database happens when a query() statement occurs -- or perhaps, with a cursor, when the subsequent cursor.read() occurs.  The SQL statement used above is a SELECT, but in the next lesson, we'll get to a bunch of others: INSERT, UPDATE, DELETE, BEGIN, END, ROLLBACK, and in each case, client.query() is the method used to execute them.
 
 ### **Parameterized Queries**
 
@@ -219,7 +259,7 @@ statement = `SELECT * FROM products WHERE price < ${price};`
 // or maybe
 statement = "SELECT * FROM products WHERE price < " + price.toString() + ";"
 ```
-**Never Never Never!** This is a bad way to do things.  The typical time that you might do this is when you get input from the user of your Express application, and you plug that input into your statement.  But users can be evil.  An evil user could plug SQL into your statement and cause data to be changed or deleted, or cause the retrieval of data you don't want to share.  This is called an SQL injection attack.  If you use a parameterized statement with a `$`, values that are plugged in are first sanitized, giving protection from the attack.
+**Never Never Never!** This is a bad way to do things.  The typical time that you might do this is when you get input from the user of your Express application, and you plug that input into your statement.  For example, when the user logs in, you might plug in their ID.  But users can be evil.  An evil user could plug SQL into your statement and cause data to be changed or deleted, or cause the retrieval of data you don't want to share.  This is called an SQL injection attack.  If you use a parameterized statement with a `$`, values that are plugged in are first sanitized, giving protection from the attack.
 
 Now add a parameterized query to the code above.  The SQL statement should find the employees with first_name being "David".  Let's summarize the steps.
 
@@ -243,7 +283,7 @@ Add another query, but use bad SQL, such as:
 SELECT nonsense from employees;
 ```
 
-See what happens. You get a report of the error -- but the program does not end.  The problem is that we need to clean up via `cursor.close()` and `client.release()` and `pool.end()`.  We'd have to make the cursor and client and pool globals or something to do the cleanup.  That's clumsy -- and in any case we are repeating way too much code.  So, time to refactor. You can put all the query operations in a function, and refactor as follows:
+See what happens. You get a report of the error -- but the program does not end.  The problem is that we need to clean up via `cursor.close()` and `client.release()` and `pool.end()`.  We'd have to make the cursor and client and pool globals or something to do the cleanup.  That's clumsy -- and in any case we are repeating way too much code.  So, it's time to refactor. You can put all the query operations in a function, and refactor as follows:
 
 ```js
 const { Pool } = require("pg");
@@ -251,8 +291,9 @@ const Cursor = require("pg-cursor");
 require("dotenv").config({ path: "../.env" });
 
 async function runQueries() {
+  let pool = null
   try {
-    const pool = new Pool({ connectionString: process.env.DB_URL });
+    pool = new Pool({ connectionString: process.env.DB_URL });
     pool.on("error", (error) => {
       console.log(
         `A pool error event occurred: ${error.name} ${error.message} ${error.stack}`,
@@ -264,11 +305,14 @@ async function runQueries() {
     await doQuery(pool, statement, ["David"]);
     statement = "SELECT nonsense FROM employees;";
     await doQuery(pool, statement, []);
-    await pool.end();
   } catch (error) {
     console.log(
-      `An error was raised: ${error.name} ${error.message} ${error.stack}`,
+      `An error was thrown: ${error.name} ${error.message} ${error.stack}`,
     );
+  } finally {
+    if (pool) {
+      await pool.end();
+    }
   }
 }
 function printRows(cursor, rows, firstRow) {
@@ -310,7 +354,7 @@ async function doQuery(pool, statement, parameters) {
     }
   } catch (error) {
     console.log(
-      `A query error was raised: ${error.name} ${error.message} ${error.stack}`,
+      `A query error was thrown: ${error.name} ${error.message} ${error.stack}`,
     );
   } finally {
     if (cursor) cursor.close();
@@ -323,15 +367,36 @@ runQueries();
 
 Much better.  And, if we get an error in one query, this is handled in the function, so that subsequent queries can still be done.
 
+### **Check for Understanding**
+
+1. Which pg and pg-cursor method calls send SQL to the database?
+
+2. Why use a pool?
+
+3. Why use a cursor?
+
+4. Why do you need event handlers?
+
+5. Suppose your program doesn't exit after all your code has run.  Why can this happen?
+
+### **Answers**
+
+1. If you don't use a cursor, client.query() sends SQL.  If you do use a query, the first cursor.read() after the client.query() sends the SQL.
+
+2. You don't always need a pool, but in an Express application you do.  You don't want the user to have to wait for a database connection with each operation, so you want to reuse open connections, and you want a few on hand in case one is busy.
+
+3. You might have a large result set.  Without a cursor, the query() would not resolve (i.e. complete) until megabytes have been transferred ... and this could crash your process or cause excessively long waits, etc.
+
+4. Some errors (an example is a transaction timeout) don't get thrown as errors in pg.  Instead, an event is dispatched, and such events must be handled.
+
+5. Your program might not exit because the event loop is still waiting on the resolution of some asynchronous event.  For example, if you have a database connection, a socket is open to handle network operations.  The Node event loop won't end while that socket is open.  You could do a Ctrl-C to get out, of course, but if you see this problem, you need to change your code to tell Node that you are done with that connection or any other open resource. 
+
 
 ### **Summary**
 In this lesson, you learned:
 
-1. How to create and connect to an SQLite database.
-2. How to define tables using SQL queries.
-3. How to populate tables with sample data.
-4. How to write SQL queries to retrieve and analyze data.
-5. How to commit changes and close the database connection.
-6. How to modify and delete data.
-7. How to access data from Pandas.
-8. By mastering these techniques, you can efficiently interact with databases using Python. For further exploration, refer to the SQLite Documentation and Python’s sqlite3 library documentation.
+1. What relational databases are, what SQL is, and how they are used.
+2. How to write SQL SELECT statements to read data from a relational database
+3. How to define tables in Postgres with SQL statements.
+4. How to connect to a Postgres database and SQL SELECT operations from within a Node program, with error handling.
+
