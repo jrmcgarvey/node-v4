@@ -392,7 +392,7 @@ Much better.  And, if we get an error in one query, this is handled in the funct
 5. Your program might not exit because the event loop is still waiting on the resolution of some asynchronous event.  For example, if you have a database connection, a socket is open to handle network operations.  The Node event loop won't end while that socket is open.  You could do a Ctrl-C to get out, of course, but if you see this problem, you need to change your code to tell Node that you are done with that connection or any other open resource. 
 
 
-### **Summary**
+## **Summary**
 In this lesson, you learned:
 
 1. What relational databases are, what SQL is, and how they are used.
