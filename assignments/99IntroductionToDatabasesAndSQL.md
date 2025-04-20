@@ -33,6 +33,8 @@ This would fail if you didn't include the single quotes, or if you replaced them
 
 6. Enter SQL to get the total revenue that each employee has brought in.  Include all employees, even if some have not obtained orders. Return this in descending order of total revenue.  Include the first_name, last_name, and total_revenue in the result.
 
+7. Find all employees associated with more than 5 orders.  You want the first_name, the last_name, and the count of orders.  You need to do a `JOIN` on the employees and orders tables, and then use GROUP BY, COUNT, and HAVING.
+
 ---
 
 ## **Task 2: Implement these queries in a Node Program**
